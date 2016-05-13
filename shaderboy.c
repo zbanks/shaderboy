@@ -16,15 +16,18 @@
 #include <SDL/SDL.h>
 #include <SDL/SDL_opengl.h>
 
-enum {
-    SHADER_COLOR,
-    SHADER_TEXTURE,
-    SHADER_TEXCOORDS,
-    NUM_SHADERS
+struct shader_data {
+	GLhandleARB program;
+	GLhandleARB vert_shader;
+	GLhandleARB frag_shader;
+    GLfloat width;
+    GLfloat height;
+	GLuint fb;
+	GLuint tex;
 };
 
-#define GLSL(x) #x
-#define GLSL_DECL(x) "uniform vec2 resolution; " #x
+#define GLSL(x) "#version 130\n" #x
+#define GLSL_DECL(x) "uniform sampler2D tex; uniform vec2 resolution;" #x
 
 static const char * vertex_shader_source = GLSL(
     void main() {
@@ -32,17 +35,27 @@ static const char * vertex_shader_source = GLSL(
     }
 );
 
+static const char * final_shader_source = GLSL_DECL(
+    void main() {
+        vec2 uv = gl_FragCoord.xy / resolution;
+        gl_FragColor = texture2D(tex, uv);
+    }
+);
+static struct shader_data final_shader;
+
 static const char * shader_sources[] = {
 	GLSL_DECL(
 		void main() {
 			vec2 uv = gl_FragCoord.xy / resolution;
-			gl_FragColor = vec4(uv.xy, 0.5, 1.0);
+            vec4 color = texture2D(tex, uv);
+			gl_FragColor = vec4(uv.xy, color.b, 1.0);
 		}
 	),
 	GLSL_DECL(
 		void main() {
 			vec2 uv = gl_FragCoord.xy / resolution;
-			gl_FragColor = vec4(uv.xy, 0.5, 1.0).bgra;
+            vec4 color = texture2D(tex, uv);
+			gl_FragColor = vec4(color.b, uv.xy, 1.0);
 		}
 	),
 	GLSL_DECL(
@@ -59,15 +72,6 @@ static const char * shader_sources[] = {
 	),
 };
 static size_t shader_count = sizeof(shader_sources) / sizeof(*shader_sources);
-
-struct shader_data {
-	GLhandleARB program;
-	GLhandleARB vert_shader;
-	GLhandleARB frag_shader;
-    GLfloat width;
-    GLfloat height;
-	GLuint out_tex;
-};
 
 static int compile_shader(GLhandleARB shader, const char *source)
 {
@@ -102,6 +106,7 @@ static int shader_data_init(struct shader_data * output, const char * source) {
     output->program = glCreateProgramObjectARB();
 
     /* Create the vertex shader */
+
     output->vert_shader = glCreateShaderObjectARB(GL_VERTEX_SHADER_ARB);
     if (compile_shader(output->vert_shader, vertex_shader_source))
         return -1;
@@ -118,16 +123,31 @@ static int shader_data_init(struct shader_data * output, const char * source) {
 
     /* Set up some uniform variables */
     glUseProgramObjectARB(output->program);
+
     GLint location = glGetUniformLocationARB(output->program, "resolution");
-    if (location >= 0) {
-        glUniform2fARB(location, output->width, output->height);
+    glUniform2fARB(location, output->width, output->height);
+
+    /*
+    location = glGetUniformLocationARB(output->program, "tex");
+    if (location < 0) goto fail;
+    glUniform1iARB(location, child_tex);
+    */
+
+    /*
+    for (size_t x = 0; x < 10; x++) {
+        GLsizei sz, usz;
+        GLenum utype;
+        char buf[1024];
+        glGetActiveUniform(output->program, x, sizeof buf, &sz, &usz, &utype, buf);
+        printf("uniform: %s\n", buf);
     }
+    */
 
     /* TODO
     for (i = 0; i < num_tmus_bound; ++i) {
         char tex_name[5];
         SDL_snprintf(tex_name, SDL_arraysize(tex_name), "tex%d", i);
-        location = glGetUniformLocationARB(data->program, tex_name);
+        location = glGetUniformLocation(data->program, tex_name);
         if (location >= 0) {
             glUniform1iARB(location, i);
         }
@@ -135,9 +155,22 @@ static int shader_data_init(struct shader_data * output, const char * source) {
     */
     glUseProgramObjectARB(0);
 
+    // Make the framebuffer
+    glGenFramebuffersEXT(1, &output->fb);
+    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, output->fb);
+    glGenTextures(1, &output->tex);
+    glBindTexture(GL_TEXTURE_2D, output->tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, output->width, output->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, output->tex, 0);
+
     GLenum err = glGetError();
     if (err != GL_NO_ERROR) {
-        fprintf(stderr, "Got error: %d", err);
+        fprintf(stderr, "Got error: %d (%#04x)\n", err, err);
         return -1;
     }
 
@@ -159,10 +192,12 @@ static struct shader_data * shaders_create(float width, float height) {
 */
 
     struct shader_data * shaders = calloc(shader_count, sizeof *shaders);
+
     /* Compile all the shaders */
     for (size_t i = 0; i < shader_count; ++i) {
         shaders[i].width = width;
         shaders[i].height = height;
+
         if (shader_data_init(&shaders[i], shader_sources[i])) {
             fprintf(stderr, "Unable to compile shader!\n");
             return NULL;
@@ -203,7 +238,7 @@ void InitGL(int Width, int Height)                    // We call this right afte
 }
 
 /* The main drawing function. */
-void shader_draw(struct shader_data * shader) {
+void shader_draw(struct shader_data * shaders, size_t i) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);        // Clear The Screen And The Depth Buffer
     glLoadIdentity();                // Reset The View
 
@@ -212,25 +247,41 @@ void shader_draw(struct shader_data * shader) {
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // draw a textured square (quadrilateral)
-    glEnable(GL_TEXTURE_2D);
-    //glBindTexture(GL_TEXTURE_2D, texture);
-    glColor3f(1.0f,1.0f,1.0f);
-	glUseProgramObjectARB(shader->program);
+    //glEnable(GL_TEXTURE_2D);
 
+    for (size_t z = 0; z < shader_count; z++) {
+        glUseProgramObjectARB(shaders[z].program);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, shaders[(z+1)%shader_count].tex);
+        GLint loc = glGetUniformLocationARB(shaders[z].program, "tex");
+        glUniform1iARB(loc, 0);
+
+        glEnable(GL_TEXTURE_2D);
+
+        glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, shaders[i].fb);
+        glBegin(GL_QUADS);                // start drawing a polygon (4 sided)
+        glVertex2f(-1, -1);
+        glVertex2f(1, -1);
+        glVertex2f(1, 1);
+        glVertex2f(-1, 1);
+        glEnd();                    // done with the polygon
+    }
+
+	glUseProgramObjectARB(final_shader.program);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, shaders[i].tex);
+    GLint loc = glGetUniformLocationARB(final_shader.program, "tex");
+    if (loc < 0) { fprintf(stderr, "fail\n"); }
+    glUniform1iARB(loc, 0);
+
+    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
     glBegin(GL_QUADS);                // start drawing a polygon (4 sided)
-    glTexCoord2f(0.0f, 0.0f);
-    glVertex3f(-1.0f, 1.0f, 0.0f);        // Top Left
-    glTexCoord2f(1.0f, 0.0f);
-    glVertex3f( 1.0f, 1.0f, 0.0f);        // Top Right
-    glTexCoord2f(1.0f, 1.0f);
-    glVertex3f( 1.0f,-1.0f, 0.0f);        // Bottom Right
-    glTexCoord2f(0.0f, 1.0f);
-    glVertex3f(-1.0f,-1.0f, 0.0f);        // Bottom Left    
+    glVertex2f(-1, -1);
+    glVertex2f(1, -1);
+    glVertex2f(1, 1);
+    glVertex2f(-1, 1);
     glEnd();                    // done with the polygon
-
-	glUseProgramObjectARB(0);
-    glDisable(GL_TEXTURE_2D);
 
     // swap buffers to display, since we're double buffered.
     SDL_GL_SwapBuffers();
@@ -256,15 +307,18 @@ int main(int argc, char **argv) {
     /* Loop, drawing and checking events */
     InitGL(300, 300);
 
+    final_shader.width = 300;
+    final_shader.height = 300;
+    int rc = shader_data_init(&final_shader, final_shader_source);
     struct shader_data * shaders = shaders_create(300, 300);
-    if (shaders == NULL) {
-        printf("Shaders not supported!\n");
+    if (rc != 0 || shaders == NULL) {
+        printf("Unable to initialize!\n");
 		exit(1);
     }
 
     size_t current_shader = 0;
     while (true) {
-        shader_draw(&shaders[current_shader]);
+        shader_draw(shaders, current_shader);
 
 		SDL_Event event;
 		while ( SDL_PollEvent(&event) ) {
