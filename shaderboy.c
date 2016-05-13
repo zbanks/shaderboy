@@ -9,6 +9,7 @@
   freely.
 */
 /* This is a simple example of using GLSL shaders with SDL */
+#define GL_GLEXT_PROTOTYPES
 
 #include <stdlib.h>
 #include <stdbool.h>
@@ -67,20 +68,6 @@ struct shader_data {
     GLfloat height;
 	GLuint out_tex;
 };
-
-static PFNGLATTACHOBJECTARBPROC glAttachObjectARB;
-static PFNGLCOMPILESHADERARBPROC glCompileShaderARB;
-static PFNGLCREATEPROGRAMOBJECTARBPROC glCreateProgramObjectARB;
-static PFNGLCREATESHADEROBJECTARBPROC glCreateShaderObjectARB;
-static PFNGLDELETEOBJECTARBPROC glDeleteObjectARB;
-static PFNGLGETINFOLOGARBPROC glGetInfoLogARB;
-static PFNGLGETOBJECTPARAMETERIVARBPROC glGetObjectParameterivARB;
-static PFNGLGETUNIFORMLOCATIONARBPROC glGetUniformLocationARB;
-static PFNGLLINKPROGRAMARBPROC glLinkProgramARB;
-static PFNGLSHADERSOURCEARBPROC glShaderSourceARB;
-static PFNGLUNIFORM1IARBPROC glUniform1iARB;
-static PFNGLUNIFORM2FARBPROC glUniform2fARB;
-static PFNGLUSEPROGRAMOBJECTARBPROC glUseProgramObjectARB;
 
 static int compile_shader(GLhandleARB shader, const char *source)
 {
@@ -170,32 +157,6 @@ static struct shader_data * shaders_create(float width, float height) {
         SDL_GL_ExtensionSupported("GL_ARB_vertex_shader") &&
         SDL_GL_ExtensionSupported("GL_ARB_fragment_shader")) {
 */
-	glAttachObjectARB = (PFNGLATTACHOBJECTARBPROC) SDL_GL_GetProcAddress("glAttachObjectARB");
-	glCompileShaderARB = (PFNGLCOMPILESHADERARBPROC) SDL_GL_GetProcAddress("glCompileShaderARB");
-	glCreateProgramObjectARB = (PFNGLCREATEPROGRAMOBJECTARBPROC) SDL_GL_GetProcAddress("glCreateProgramObjectARB");
-	glCreateShaderObjectARB = (PFNGLCREATESHADEROBJECTARBPROC) SDL_GL_GetProcAddress("glCreateShaderObjectARB");
-	glDeleteObjectARB = (PFNGLDELETEOBJECTARBPROC) SDL_GL_GetProcAddress("glDeleteObjectARB");
-	glGetInfoLogARB = (PFNGLGETINFOLOGARBPROC) SDL_GL_GetProcAddress("glGetInfoLogARB");
-	glGetObjectParameterivARB = (PFNGLGETOBJECTPARAMETERIVARBPROC) SDL_GL_GetProcAddress("glGetObjectParameterivARB");
-	glGetUniformLocationARB = (PFNGLGETUNIFORMLOCATIONARBPROC) SDL_GL_GetProcAddress("glGetUniformLocationARB");
-	glLinkProgramARB = (PFNGLLINKPROGRAMARBPROC) SDL_GL_GetProcAddress("glLinkProgramARB");
-	glShaderSourceARB = (PFNGLSHADERSOURCEARBPROC) SDL_GL_GetProcAddress("glShaderSourceARB");
-	glUniform1iARB = (PFNGLUNIFORM1IARBPROC) SDL_GL_GetProcAddress("glUniform1iARB");
-	glUniform2fARB = (PFNGLUNIFORM2FARBPROC) SDL_GL_GetProcAddress("glUniform2fARB");
-	glUseProgramObjectARB = (PFNGLUSEPROGRAMOBJECTARBPROC) SDL_GL_GetProcAddress("glUseProgramObjectARB");
-	if (glAttachObjectARB &&
-		glCompileShaderARB &&
-		glCreateProgramObjectARB &&
-		glCreateShaderObjectARB &&
-		glDeleteObjectARB &&
-		glGetInfoLogARB &&
-		glGetObjectParameterivARB &&
-		glGetUniformLocationARB &&
-		glLinkProgramARB &&
-		glShaderSourceARB &&
-		glUniform1iARB &&
-		glUseProgramObjectARB) {
-	}
 
     struct shader_data * shaders = calloc(shader_count, sizeof *shaders);
     /* Compile all the shaders */
